@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
-VLESS_PATTERN = re.compile(r"vless://[^\s\"'<>]+", re.IGNORECASE)
+LINK_PATTERN = re.compile(r"(?:vless|hysteria2)://[^\s\"'<>]+", re.IGNORECASE)
 DATA_PANEL_PATTERN = re.compile(r'data-panel="([^"]+)"', re.IGNORECASE)
 ALL_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 HWID_FILE = ".hwid"
@@ -236,11 +236,11 @@ def fetch_text(url: str, headers: dict[str, str], timeout: int = 15) -> FetchRes
     raise urllib.error.URLError("Unknown fetch error")
 
 
-def extract_vless_links(text: str) -> list[str]:
+def extract_proxy_links(text: str) -> list[str]:
     seen: set[str] = set()
     links: list[str] = []
 
-    for match in VLESS_PATTERN.findall(text):
+    for match in LINK_PATTERN.findall(text):
         clean = match.strip().rstrip("),.;")
         if clean not in seen:
             seen.add(clean)
@@ -307,7 +307,7 @@ def build_panel_message(panel_payload: dict, unsupported_placeholder_seen: bool)
     links = response.get("links", [])
 
     message = (
-        "The subscription page is valid, but it does not expose raw VLESS links.\n\n"
+        "The subscription page is valid, but it does not expose raw VLESS/Hysteria2 links.\n\n"
         f"User: {username}\n"
         f"Status: {status}\n"
         f"Expires: {expires_at}\n"
@@ -318,19 +318,19 @@ def build_panel_message(panel_payload: dict, unsupported_placeholder_seen: bool)
         message += (
             "\n\nA direct request to this Remnawave subscription returns the placeholder "
             "'App not supported'. That means the provider gives real nodes only to supported "
-            "apps like eVPN/Happ, not as public raw VLESS links."
+            "apps like eVPN/Happ, not as public raw VLESS/Hysteria2 links."
         )
 
     return message
 
 
 def extract_links_from_text(text: str) -> list[str]:
-    direct_links = extract_vless_links(text)
+    direct_links = extract_proxy_links(text)
     if direct_links:
         return direct_links
 
     for decoded_text in decode_base64_variants(text):
-        decoded_links = extract_vless_links(decoded_text)
+        decoded_links = extract_proxy_links(decoded_text)
         if decoded_links:
             return decoded_links
 
@@ -376,7 +376,7 @@ def get_vless_links_from_subscription(
                 page_links = [
                     value
                     for value in parsed_panel.get("response", {}).get("links", [])
-                    if isinstance(value, str) and value.lower().startswith("vless://")
+                    if isinstance(value, str) and (value.lower().startswith("vless://") or value.lower().startswith("hysteria2://"))
                 ]
                 if page_links:
                     return page_links
@@ -390,7 +390,7 @@ def get_vless_links_from_subscription(
     if unsupported_placeholder_seen:
         raise UnsupportedAppError(
             "The subscription endpoint returns only the placeholder 'App not supported'.\n\n"
-            "This Remnawave setup does not expose real raw VLESS links to unsupported clients. "
+            "This Remnawave setup does not expose real raw VLESS/Hysteria2 links to unsupported clients. "
             "Import works only through the provider's supported apps."
         )
 
@@ -410,7 +410,7 @@ def get_vless_links_from_subscription(
     if last_url_error:
         raise last_url_error
 
-    raise SubscriptionError("Could not find any real vless:// links in the server response.")
+    raise SubscriptionError("Could not find any real proxy links (vless/hysteria2) in the server response.")
 
 
 def save_links(links: list[str], output_path: str) -> None:
@@ -543,7 +543,7 @@ def run_gui() -> int:
 
     title = ttk.Label(
         root,
-        text="Extract raw VLESS links from a subscription URL",
+        text="Extract raw VLESS/Hysteria2 links from a subscription URL",
         style="Title.TLabel"
     )
     title.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 8))
@@ -648,7 +648,7 @@ def run_gui() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Extract raw VLESS links from a subscription URL.")
+    parser = argparse.ArgumentParser(description="Extract raw VLESS/Hysteria2 links from a subscription URL.")
     parser.add_argument("url", nargs="?", help="Subscription URL.")
     parser.add_argument("-o", "--output", help="Path to save the resulting TXT file.")
     parser.add_argument("--no-gui", action="store_true", help="Run in console mode only.")
